@@ -163,11 +163,8 @@ answer(struct node *res, struct node **vars)
 
 	old_vars = *vars;
 	for (f = facts; f; f = f->next) {
-		_f = f;
-		if (f->type == ASSIGN) {
-			_f = dup_node(f);
-			rename_vars(_f, var_gen++);
-		}
+		_f = dup_node(f);
+		rename_vars(_f, var_gen++);
 		if (!unify(_f, res, vars))
 			goto no_match;
 		if (_f->type == ASSIGN) /* rule */
@@ -178,8 +175,7 @@ answer(struct node *res, struct node **vars)
 			goto out;
 		}
 	no_match:
-		if (_f != f)
-			free_nodes(_f);
+		free_nodes(_f);
 		*vars = old_vars; /* XXX leak */
 	}
 
