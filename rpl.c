@@ -90,7 +90,7 @@ add_var(struct node **vars, char *name, int gen, struct node *s)
 	struct node *v;
 
 	v = new_node(VAR);
-	v->subst = dup_nodes(s);
+	v->subst = dup_node(s);
 	v->next = *vars;
 	v->name = strdup(name);
 	v->gen = gen;
