@@ -7,7 +7,7 @@
 
 #define YYSTYPE struct node *
 %}
-%token ATOM VAR ASSIGN
+%token ATOM VAR TAIL ASSIGN
 
 %%
 
@@ -49,7 +49,34 @@ args : term {
 		for (n = $$; n->next != NULL; n = n->next);
 		n->next = $3;
 	} | ;
-term : functor | atom | var
+term : functor | list | atom | var
+list : '[' elems ']' {
+		$$ = $2;
+	} | '[' elems '|' tail ']' {
+		struct node *n;
+		$$ = $2;
+		for (n = $$; n->tail != NULL; n = n->tail);
+		n->tail = $4;
+	} | '[' ']' {
+		$$ = new_node(LIST);
+	}
+elems : term {
+		$$ = new_node(LIST);
+		$$->args = $1;
+	} | elems ',' term {
+		struct node *n;
+		$$ = $1;
+		for (n = $$; n->tail != NULL; n = n->tail);
+		n->tail = new_node(LIST);
+		n->tail->args = $3;
+	}
+tail : list {
+		$$ = $1;
+	} | var {
+		$$ = new_node(LIST);
+		$$->args = $1;
+		$$->is_tail = 1;
+	}
 atom : ATOM {
 		$$ = new_node(ATOM);
 		$$->name = strdup(yytext);

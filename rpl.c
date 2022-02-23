@@ -38,7 +38,8 @@ _dup_node(struct node *o, int one)
 	memcpy(n, o, sizeof(struct node));
 	n->args = _dup_node(o->args, 0);
 	n->body = _dup_node(o->body, 0);
-	n->name = strdup(o->name);
+	if (o->name)
+		n->name = strdup(o->name);
 	if (!one)
 		n->next = _dup_node(o->next, 0);
 	else
@@ -47,11 +48,13 @@ _dup_node(struct node *o, int one)
 	return (n);
 }
 
+#if 0
 static struct node *
 dup_nodes(struct node *o)
 {
 	return (_dup_node(o, 0));
 }
+#endif
 
 static struct node *
 dup_node(struct node *o)
@@ -98,25 +101,27 @@ find_var(struct node *vars, char *name, int gen)
 }
 
 static void
-add_var(struct node **vars, char *name, int gen, struct node *s)
+add_var(struct node **vars, struct node *orig, struct node *subst)
 {
 	struct node *v;
 
 	v = new_node(VAR);
-	v->subst = dup_node(s);
+	v->subst = dup_node(subst);
 	v->next = *vars;
-	v->name = strdup(name);
-	v->gen = gen;
+	if (orig->name)
+		v->name = strdup(orig->name);
+	v->gen = orig->gen;
 	*vars = v;
 }
 
 static int
 unify(struct node *a, struct node *b, struct node **vars)
 {
-	struct node *aa, *bb, *v;
+	struct node *aa, *bb, *n, *v;
+	int ret;
 
-	if ((a->type == ATOM || a->type == ASSIGN) && b->type == ATOM &&
-	    a->arity == b->arity) {
+	if (a && b && (a->type == ATOM || a->type == ASSIGN) && b->type ==
+	    ATOM && a->arity == b->arity) {
 		if (strcmp(a->name, b->name))
 			return (0);
 		if (a->arity == 0)
@@ -126,16 +131,44 @@ unify(struct node *a, struct node *b, struct node **vars)
 			if (!unify(aa, bb, vars))
 				return (0);
 		return (1);
-	} else if (a->type == VAR) {
+	} else if (a && b && a->type == LIST && b->type == LIST) {
+		for (aa = a, bb = b; aa && bb; aa = aa->tail, bb = bb->tail) {
+			if (!aa->args && !bb->args)
+				return (1);
+			if (aa->is_tail)
+				return (unify(aa->args, bb, vars));
+			if (bb->is_tail)
+				return (unify(aa, bb->args, vars));
+			if (!aa->args || !bb->args)
+				return (0);
+			if (!unify(aa->args, bb->args, vars))
+				return (0);
+		}
+		if (aa && aa->is_tail) {
+			n = new_node(LIST);
+			ret = unify(aa->args, n, vars);
+			free_node(n);
+			return (ret);
+		}
+		if (bb && bb->is_tail) {
+			n = new_node(LIST);
+			return (unify(n, bb->args, vars));
+			free_node(n);
+			return (ret);
+		}
+		if (aa || bb)
+			return (0);
+		return (1);
+	} else if (a && a->type == VAR) {
 		if ((v = find_var(*vars, a->name, a->gen)) != NULL)
 			return (unify(v->subst, b, vars));
-		add_var(vars, a->name, a->gen, b);
+		add_var(vars, a, b);
 		return (1);
-	} else if (b->type == VAR) {
+	} else if (b && b->type == VAR) {
 		if ((v = find_var(*vars, b->name, b->gen)) != NULL)
 			return (unify(a, v->subst, vars));
 		else {
-			add_var(vars, b->name, b->gen, a);
+			add_var(vars, b, a);
 			return (1);
 		}
 	}
@@ -155,12 +188,11 @@ rename_vars(struct node *rule, int gen) {
 	if (rule->type == VAR) {
 		rule->gen = gen;
 		return;
-	}
-	for (n = rule->args; n; n = n->next)
-		if (n->type == VAR)
-			n->gen = gen;
-		else
+	} else if (rule->type == LIST)
+		for (n = rule; n; n = n->tail)
 			rename_vars(n->args, gen);
+	for (n = rule->args; n; n = n->next)
+		rename_vars(n, gen);
 	for (n = rule->body; n; n = n->next)
 		rename_vars(n, gen);
 }
@@ -204,43 +236,63 @@ out:
 	return (ret);
 }
 
-static void print_node(struct node *n, struct node *vars);
-static void print_one(struct node *n, struct node *vars);
+static void _print_node(struct node *n, struct node *vars, int one);
+
+static void
+print_list(struct node *n, struct node *vars)
+{
+	if (n == NULL)
+		return;
+	_print_node(n->args, vars, 1);
+	if (n->tail) {
+		printf("%s", n->tail->is_tail ? "|" : ", ");
+		print_list(n->tail, vars);
+	}
+}
 
 static void
 _print_node(struct node *n, struct node *vars, int one)
 {
 	struct node *v;
 
+	if (n == NULL)
+		return;
+
 	if (n->type == VAR) {
 		v = find_var(vars, n->name, n->gen);
 		if (v)
-			print_one(v->subst, vars);
+			_print_node(v->subst, vars, 1);
 		else
-			printf("%s", n->name);
-		return;
+			printf("%s%s", n->is_tail ? "|" : "", n->name);
+	}
+	if (n->type == LIST) {
+		printf("[");
+		print_list(n, vars);
+		printf("]");
 	}
 	if (n->type == ATOM || n->type == ASSIGN)
 		printf("%s", n->name);
 	if (n->arity > 0) {
 		printf("(");
-		print_node(n->args, vars);
+		_print_node(n->args, vars, 0);
 		printf(")");
 	}
 	if (!one && n->next) {
 		printf(", ");
-		print_node(n->next, vars);
+		_print_node(n->next, vars, 0);
 	}
 }
 
+#if 0
 static void
-print_node(struct node *n, struct node *vars)
+print_nodes(struct node *n, struct node *vars)
 {
 	_print_node(n, vars, 0);
 }
+#endif
 
 static void
-print_one(struct node *n, struct node *vars)
+print_node(struct node *n, struct node *vars)
 {
 	_print_node(n, vars, 1);
 }
@@ -260,7 +312,7 @@ print_vars(struct node *res, struct node *vars)
 			v = find_var(vars, n->name, 0);
 			assert(v);
 			printf("%s = ", n->name);
-			print_one(v->subst, vars);
+			print_node(v->subst, vars);
 			printf("\n");
 			found = 1;
 		} else
