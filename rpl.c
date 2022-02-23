@@ -60,15 +60,28 @@ dup_node(struct node *o)
 }
 
 static void
-free_nodes(struct node *n)
+_free_node(struct node *n, int one)
 {
 	if (n == NULL)
 		return;
-	free_nodes(n->next);
-	free_nodes(n->args);
-	free_nodes(n->body);
+	_free_node(n->body, 0);
+	_free_node(n->args, 0);
+	if (!one)
+		_free_node(n->next, 0);
 	free(n->name);
 	free(n);
+}
+
+static void
+free_node(struct node *n)
+{
+	_free_node(n, 1);
+}
+
+static void
+free_nodes(struct node *n)
+{
+	_free_node(n, 0);
 }
 
 static struct node *
@@ -155,7 +168,7 @@ rename_vars(struct node *rule, int gen) {
 static int
 answer(struct node *res, struct node **vars)
 {
-	struct node *f, *_f, *old_vars;
+	struct node *f, *_f, *old_vars, *v, *vv;
 	int ret;
 
 	if (res == NULL)
@@ -172,11 +185,18 @@ answer(struct node *res, struct node **vars)
 				goto no_match;
 		if (answer(res->next, vars)) { /* conjunction */
 			ret = 1;
+			free_node(_f);
 			goto out;
 		}
 	no_match:
-		free_nodes(_f);
-		*vars = old_vars; /* XXX leak */
+		free_node(_f);
+		v = *vars;
+		while (v != old_vars) {
+			vv = v->next;
+			free_node(v);
+			v = vv;
+		}
+		*vars = old_vars;
 	}
 
 	ret = 0;
@@ -277,7 +297,8 @@ main(int argc, char **argv)
 						printf("yes\n");
 				} else
 					printf("no\n");
-				//free_node(yynode);
+				free_node(yynode);
+				free_nodes(vars);
 			}
 		} else {
 			printf("syntax error\n");
