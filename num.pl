@@ -1,29 +1,29 @@
-num(a).
+num(z).
 num(s(X)) :- num(X).
 
-le(a, X) :- num(X).
+le(z, X) :- num(X).
 le(s(X), s(Y)) :- le(X, Y).
-lt(a, s(X)) :- num(X).
+lt(z, s(X)) :- num(X).
 lt(s(X), s(Y)) :- lt(X, Y).
 
-le(s(a), s(s(s(a))))? % yes
-le(s(s(a)), s(a))? % no
-le(s(s(a)), s(s(a)))? % yes
-lt(s(a), s(s(s(a))))? % yes
-lt(s(s(a)), s(a))? % no
-lt(s(s(a)), s(s(a)))? % no
+le(s(z), s(s(s(z))))? % yes
+le(s(s(z)), s(z))? % no
+le(s(s(z)), s(s(z)))? % yes
+lt(s(z), s(s(s(z))))? % yes
+lt(s(s(z)), s(z))? % no
+lt(s(s(z)), s(s(z)))? % no
 
-plus(a, X, X) :- num(X).
+plus(z, X, X) :- num(X).
 plus(s(X), Y, s(Z)) :- plus(X, Y, Z).
 
-plus(s(a), s(s(a)), s(s(s(a))))? % yes
-plus(s(a), s(s(a)), s(s(a)))? % no
-plus(s(s(s(a))), s(s(a)), X)? % X = s(s(s(s(s(a)))))
+plus(s(z), s(s(z)), s(s(s(z))))? % yes
+plus(s(z), s(s(z)), s(s(z)))? % no
+plus(s(s(s(z))), s(s(z)), X)? % X = s(s(s(s(s(z)))))
 
-times(a, X, a).
+times(z, X, z).
 times(s(X), Y, Z) :- times(X, Y, XY), plus(XY, Y, Z).
 
-times(a, s(s(a)), a)? % yes
-times(s(s(a)), s(s(s(a))), s(s(s(s(s(s(a)))))))? % yes
-times(s(s(a)), s(s(s(a))), s(s(s(s(s(a))))))? % no
-times(s(s(a)), s(s(s(a))), X)? % X = s(s(s(s(s(s(a))))))
+times(z, s(s(z)), z)? % yes
+times(s(s(z)), s(s(s(z))), s(s(s(s(s(s(z)))))))? % yes
+times(s(s(z)), s(s(s(z))), s(s(s(s(s(z))))))? % no
+times(s(s(z)), s(s(s(z))), X)? % X = s(s(s(s(s(s(z))))))
