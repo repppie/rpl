@@ -7,7 +7,11 @@
 
 #define YYSTYPE struct node *
 %}
-%token ATOM VAR TAIL ASSIGN
+%token ATOM VAR NUM LIST ASSIGN IS LE GE
+
+%left IS
+%left '+' '-'
+%left '*' '/'
 
 %%
 
@@ -29,9 +33,11 @@ query : conjuction '?' {
 		$$ = $1;
 		$$->type = QUERY;
 	}
-conjuction : functor | conjuction ',' functor {
+conjuction : term | conjuction ',' term {
+		struct node *n;
 		$$ = $1;
-		$$->next = $3;
+		for (n = $$; n->next != NULL; n = n->next);
+		n->next = $3;
 	}
 functor : atom '(' args ')' {
 		$$ = $1;
@@ -49,7 +55,62 @@ args : term {
 		for (n = $$; n->next != NULL; n = n->next);
 		n->next = $3;
 	} | ;
-term : functor | list | atom | var
+term : functor | list | atom | var | num | term IS expr {
+		$$ = new_node(ATOM);
+		$$->name = "(is)";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} | term '<' expr {
+		$$ = new_node(ATOM);
+		$$->name = "<";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} | term '>' expr {
+		$$ = new_node(ATOM);
+		$$->name = ">";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} | term LE expr {
+		$$ = new_node(ATOM);
+		$$->name = "<=";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} | term GE expr {
+		$$ = new_node(ATOM);
+		$$->name = ">=";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	}
+expr : num | var | expr '+' expr {
+		$$ = new_node(ATOM);
+		$$->name = "+";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} | expr '-' expr {
+		$$ = new_node(ATOM);
+		$$->name = "-";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} | expr '*' expr {
+		$$ = new_node(ATOM);
+		$$->name = "*";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} | expr '/' expr {
+		$$ = new_node(ATOM);
+		$$->name = "-";
+		$$->arity = 2;
+		$$->args = $1;
+		$1->next = $3;
+	} 
 list : '[' elems ']' {
 		$$ = $2;
 	} | '[' elems '|' tail ']' {
@@ -85,7 +146,10 @@ var : VAR {
 		$$ = new_node(VAR);
 		$$->name = strdup(yytext);
 	}
-
+num : NUM {
+		$$ = new_node(NUM);
+		$$->val = (long)yylval;
+	}
 %%
  
 static void
@@ -112,6 +176,8 @@ yylex(void)
 		} while (isalpha(c) || (c >= '0' && c <= '9'));
 		yytext[yyleng] = '\0';
 		ungetc(c, stdin);
+		if (!strcmp(yytext, "is"))
+			return (IS);
 		return (ATOM);
 	} else if (c >= 'A' && c <= 'Z') {
 		do {
@@ -121,12 +187,39 @@ yylex(void)
 		yytext[yyleng] = '\0';
 		ungetc(c, stdin);
 		return (VAR);
+	} else if (c >= '0' && c <= '9') {
+		long num;
+
+		num = 0;
+		do {
+			num = 10 * num + c - '0';
+			c = getchar();
+		} while (c >= '0' && c <= '9');
+		yylval = (struct node *)num;
+		ungetc(c, stdin);
+		return (NUM);
 	} else if (c == ':') {
 		int c2;
 
 		c2 = getchar();
 		if (c2 == '-')
 			return (ASSIGN);
+		else
+			ungetc(c2, stdin);
+	} else if (c == '<') {
+		int c2;
+
+		c2 = getchar();
+		if (c2 == '=')
+			return (LE);
+		else
+			ungetc(c2, stdin);
+	} else if (c == '>') {
+		int c2;
+
+		c2 = getchar();
+		if (c2 == '=')
+			return (GE);
 		else
 			ungetc(c2, stdin);
 	}

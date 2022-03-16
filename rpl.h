@@ -4,6 +4,7 @@
 enum {
 	ATOM = 257,
 	VAR,
+	NUM,
 	LIST,
 	ASSIGN,
 	FACT,
@@ -17,8 +18,10 @@ struct node {
 		struct node *body;
 		struct node *subst;
 		struct node *tail;
+		int (*func)(struct node *, struct node **);
 	};
 	char *name;
+	long val;
 	int type;
 	int arity;
 	int is_tail;

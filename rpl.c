@@ -15,6 +15,9 @@ struct node *yynode;
 static struct node *facts;
 static struct node *last_fact;
 
+#define	HASHTAB_SIZE 256
+struct node *builtins[HASHTAB_SIZE];
+
 struct node *
 new_node(int type)
 {
@@ -87,6 +90,49 @@ free_nodes(struct node *n)
 	_free_node(n, 0);
 }
 
+#define HASHSTEP(x, c) (((x << 5) + x) + (c))
+static unsigned int
+hash_str(char *s)
+{
+	unsigned int hash;
+	hash = 0;
+	while (*s)
+		hash = HASHSTEP(hash, *s++);
+
+	return hash;
+}
+
+static void
+add_builtin(char *name, int arity, void *func)
+{
+	struct node *n; 
+	unsigned int hash;
+
+	n = new_node(ATOM);
+	n->func = func;
+	n->name = name;
+	n->arity = arity;
+	hash = hash_str(name);
+	n->next = builtins[hash % HASHTAB_SIZE];
+	builtins[hash % HASHTAB_SIZE] = n;
+}
+
+static int
+do_builtin(struct node *res, struct node **vars, int *ret)
+{
+	unsigned int hash;
+	struct node *n;
+
+	hash = hash_str(res->name);
+	for (n = builtins[hash % HASHTAB_SIZE]; n; n = n->next) {
+		if (n->arity != res->arity || strcmp(n->name, res->name))
+			continue;
+		*ret = n->func(res->args, vars);
+		return (1);
+	}
+	return (0);
+}
+
 static struct node *
 find_var(struct node *vars, char *name, int gen)
 {
@@ -131,6 +177,9 @@ unify(struct node *a, struct node *b, struct node **vars)
 			if (!unify(aa, bb, vars))
 				return (0);
 		return (1);
+	} else if (a && b && a->type == NUM && b->type == NUM) {
+		if (a->val == b->val)
+			return (1);
 	} else if (a && b && a->type == LIST && b->type == LIST) {
 		for (aa = a, bb = b; aa && bb; aa = aa->tail, bb = bb->tail) {
 			if (!aa->args && !bb->args)
@@ -206,6 +255,13 @@ answer(struct node *res, struct node **vars)
 	if (res == NULL)
 		return (1);
 
+	ret = 0;
+	if (do_builtin(res, vars, &ret)) {
+		if (ret)
+			return (answer(res->next, vars));
+		return (0);
+	}
+
 	old_vars = *vars;
 	for (f = facts; f; f = f->next) {
 		_f = dup_node(f);
@@ -270,12 +326,15 @@ _print_node(struct node *n, struct node *vars, int one)
 		print_list(n, vars);
 		printf("]");
 	}
-	if (n->type == ATOM || n->type == ASSIGN)
+	if (n->type == NUM)
+		printf("%ld", n->val);
+	else if (n->type == ATOM || n->type == ASSIGN) {
 		printf("%s", n->name);
-	if (n->arity > 0) {
-		printf("(");
-		_print_node(n->args, vars, 0);
-		printf(")");
+		if (n->arity > 0) {
+			printf("(");
+			_print_node(n->args, vars, 0);
+			printf(")");
+		}
 	}
 	if (!one && n->next) {
 		printf(", ");
@@ -322,11 +381,103 @@ print_vars(struct node *res, struct node *vars)
 	return (found);
 }
 
+static long
+eval(struct node *n, struct node *vars)
+{
+	struct node *v;
+	long ret;
+
+	assert(n != NULL);
+	if (n->type == NUM)
+		return (n->val);
+	if (n->type == VAR) {
+		if ((v = find_var(vars, n->name, n->gen)) == NULL)
+			errx(1, "%s_%d not instantiated\n", n->name, n->gen);
+		return (eval(v->subst, vars));
+	}
+	if (n->type != ATOM || n->arity != 2) {
+		errx(1, "not functor or wrong arity\n");
+	}
+	if (!strcmp(n->name, "+")) {
+		ret = eval(n->args, vars);
+		ret += eval(n->args->next, vars);
+	} else if (!strcmp(n->name, "-")) {
+		ret = eval(n->args, vars);
+		ret -= eval(n->args->next, vars);
+	} else if (!strcmp(n->name, "*")) {
+		ret = eval(n->args, vars);
+		ret *= eval(n->args->next, vars);
+	} else if (!strcmp(n->name, "/")) {
+		ret = eval(n->args, vars);
+		ret /= eval(n->args->next, vars);
+	}
+	return (ret);
+}
+
+static int
+builtin_is(struct node *args, struct node **vars)
+{
+	struct node *n;
+	int ret;
+
+	n = new_node(NUM);
+	n->val = eval(args->next, *vars);
+	ret = unify(args, n, vars);
+	free_node(n);
+	return (ret);
+}
+
+static int
+builtin_lt(struct node *args, struct node **vars)
+{
+	long l, r;
+
+	l = eval(args, *vars);
+	r = eval(args->next, *vars);
+	return (l < r);
+}
+
+static int
+builtin_gt(struct node *args, struct node **vars)
+{
+	long l, r;
+
+	l = eval(args, *vars);
+	r = eval(args->next, *vars);
+	return (l > r);
+}
+
+static int
+builtin_le(struct node *args, struct node **vars)
+{
+	long l, r;
+
+	l = eval(args, *vars);
+	r = eval(args->next, *vars);
+	return (l <= r);
+}
+
+static int
+builtin_ge(struct node *args, struct node **vars)
+{
+	long l, r;
+
+	l = eval(args, *vars);
+	r = eval(args->next, *vars);
+	return (l >= r);
+}
+
 int yyparse(void);
 
 int
 main(int argc, char **argv)
 {
+	add_builtin("(is)", 2, builtin_is);
+	add_builtin("<", 2, builtin_lt);
+	add_builtin(">", 2, builtin_gt);
+	add_builtin("<=", 2, builtin_le);
+	add_builtin(">=", 2, builtin_ge);
+
 	while (1) {
 		if (yyparse() == 0) {
 			if (yynode->type == FACT || yynode->type == ASSIGN) {
